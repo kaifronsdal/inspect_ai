@@ -147,7 +147,11 @@ async def sandbox_agent_bridge(
 
             # proxy server that runs in container and forwards to sandbox service
             proxy = await sandbox_env.exec_remote(
-                cmd=[SANDBOX_CLI, "model_proxy"],
+                cmd=[
+                    "sh",
+                    "-lc",
+                    f'exec {SANDBOX_CLI} model_proxy 2>>/tmp/model-proxy.stderr.log',
+                ],
                 options=ExecRemoteStreamingOptions(
                     concurrency=False,
                     env={

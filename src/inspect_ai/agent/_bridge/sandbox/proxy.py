@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import re
+import traceback
 import sys
 import time
 from email.utils import formatdate
@@ -32,6 +33,7 @@ MAX_BODY_BYTES = 50 * 1024 * 1024
 READ_TIMEOUT_S = 60
 WRITE_TIMEOUT_S = 60
 STREAM_CHUNK = 8192
+MODEL_PROXY_STDERR_LOG = "/tmp/model-proxy.stderr.log"
 
 HOP_BY_HOP = {
     "connection",
@@ -1839,9 +1841,20 @@ async def run_model_proxy_server(port: int) -> None:
     try:
         await server.start()
     except Exception as ex:
+        _write_model_proxy_error_log("Unexpected error running model proxy", ex)
         sys.stderr.write(f"Unexpected error running model proxy: {ex}")
         sys.stderr.flush()
         os._exit(1)
+
+
+def _write_model_proxy_error_log(prefix: str, ex: Exception) -> None:
+    try:
+        with open(MODEL_PROXY_STDERR_LOG, "a", encoding="utf-8") as f:
+            f.write(f"{prefix}: {ex}\n")
+            f.write(traceback.format_exc())
+            f.write("\n")
+    except Exception:
+        pass
 
 
 def _handle_model_proxy_error(ex: Exception) -> None:
@@ -1859,6 +1872,7 @@ def _handle_model_proxy_error(ex: Exception) -> None:
     # returning 500 to the proxied agent. This is because we are in a
     # hard failure anyway so we need the user to see the error message
     # and have the task fail (the 500 error would just result in retries)
+    _write_model_proxy_error_log("Unexpected error during model proxy call", ex)
     sys.stderr.write(f"Unexpected error during model proxy call: {ex}")
     sys.stderr.flush()
 
