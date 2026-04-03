@@ -1,4 +1,4 @@
-from copy import copy
+from copy import deepcopy
 from typing import (
     Any,
     Callable,
@@ -78,9 +78,11 @@ class ToolDef:
             if isinstance(parameters, ToolParams):
                 self.parameters = parameters
             else:
-                self.parameters = tdef.parameters
                 if parameters is not None:
+                    self.parameters = deepcopy(tdef.parameters)
                     apply_description_overrides(self.parameters, parameters)
+                else:
+                    self.parameters = tdef.parameters
 
             parameters = parameters if parameters is not None else tdef.parameters
             self.parallel = parallel if parallel is not None else tdef.parallel
@@ -102,7 +104,7 @@ class ToolDef:
                 self.description = description or tool_info.description
                 if parameters:
                     if not isinstance(parameters, ToolParams):
-                        self.parameters = copy(tool_info.parameters)
+                        self.parameters = deepcopy(tool_info.parameters)
                         apply_description_overrides(self.parameters, parameters)
                     else:
                         self.parameters = parameters

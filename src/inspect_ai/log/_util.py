@@ -22,7 +22,7 @@ MAX_TEXT_LENGTH = 5120
 def thin_input(inputs: str | list[ChatMessage]) -> str | list[ChatMessage]:
     # Clean the input of any images or documents
     if isinstance(inputs, list):
-        input: list[ChatMessage] = []
+        thinned: list[ChatMessage] = []
         for message in inputs:
             if not isinstance(message.content, str):
                 filtered_content: list[
@@ -51,12 +51,14 @@ def thin_input(inputs: str | list[ChatMessage]) -> str | list[ChatMessage]:
                         filtered_content.append(
                             ContentText(text=f"({content.type.capitalize()})")
                         )
-                message.content = filtered_content
-                input.append(message)
+                thinned.append(message.model_copy(update={"content": filtered_content}))
             else:
-                message.content = truncate_text(message.content)
-                input.append(message)
-        return input
+                thinned.append(
+                    message.model_copy(
+                        update={"content": truncate_text(message.content)}
+                    )
+                )
+        return thinned
     else:
         return truncate_text(inputs)
 

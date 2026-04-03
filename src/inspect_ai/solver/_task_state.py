@@ -113,11 +113,17 @@ class Choices(Sequence[Choice]):
         shuffled_positions = list(range(len(self._choices)))
         rand.shuffle(shuffled_positions)
 
-        shuffled_choices = [Choice("notachoice", None, -1)] * len(self._choices)
+        shuffled_choices: list[Choice] = []
 
         for i, shuffled_position in enumerate(shuffled_positions):
-            shuffled_choices[i] = self._choices[shuffled_position]
-            shuffled_choices[i].original_position = shuffled_position
+            choice = self._choices[shuffled_position]
+            shuffled_choices.append(
+                Choice(
+                    value=choice.value,
+                    correct=choice.correct,
+                    original_position=shuffled_position,
+                )
+            )
 
         self._choices = shuffled_choices
 
