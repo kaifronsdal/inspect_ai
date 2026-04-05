@@ -263,4 +263,34 @@ def unique_scorer_name(scorer: Scorer | str, already_used_names: list[str]) -> s
     return scorer_name
 
 
+@dataclass
+class ResolvedScorer:
+    """A scorer paired with its resolved unique name."""
+
+    scorer: Scorer
+    name: str
+
+
+def resolve_scorers(
+    scorers: list[Scorer],
+    existing_names: list[str] | None = None,
+) -> list[ResolvedScorer]:
+    """Resolve a list of scorers to unique names.
+
+    Args:
+        scorers: List of scorers to resolve.
+        existing_names: Optional list of already-used names to avoid conflicts with.
+
+    Returns:
+        List of ResolvedScorer with unique names assigned.
+    """
+    used_names = list(existing_names) if existing_names else []
+    resolved: list[ResolvedScorer] = []
+    for scorer in scorers:
+        name = unique_scorer_name(scorer, used_names)
+        used_names.append(name)
+        resolved.append(ResolvedScorer(scorer=scorer, name=name))
+    return resolved
+
+
 SCORER_METRICS = "metrics"

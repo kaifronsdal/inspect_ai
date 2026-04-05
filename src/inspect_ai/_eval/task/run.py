@@ -96,7 +96,7 @@ from inspect_ai.scorer import Scorer, Target
 from inspect_ai.scorer._metric import Metric, SampleScore
 from inspect_ai.scorer._reducer.types import ScoreReducer
 from inspect_ai.scorer._score import init_scoring_context
-from inspect_ai.scorer._scorer import unique_scorer_name
+from inspect_ai.scorer._scorer import ResolvedScorer, resolve_scorers
 from inspect_ai.solver import Generate, Plan, TaskState
 from inspect_ai.solver._chain import Chain, unroll
 from inspect_ai.solver._fork import set_task_generate
@@ -255,6 +255,9 @@ async def task_run(options: TaskRunOptions) -> EvalLog:
     # resolve the scorer
     score = score and task.scorer is not None
     scorers: list[Scorer] | None = task.scorer if (score and task.scorer) else None
+    resolved: list[ResolvedScorer] | None = (
+        resolve_scorers(scorers) if scorers else None
+    )
     scorer_profiles = (
         [registry_log_name(scorer) for scorer in scorers if is_registry_object(scorer)]
         if scorers is not None
@@ -365,7 +368,7 @@ async def task_run(options: TaskRunOptions) -> EvalLog:
                     update_metrics_display(
                         len(progress_results),
                         progress_results,
-                        scorers,
+                        resolved,
                         task.epochs_reducer,
                         task.metrics,
                     )
@@ -383,7 +386,7 @@ async def task_run(options: TaskRunOptions) -> EvalLog:
                 update_metrics_display(
                     len(progress_results),
                     progress_results,
-                    scorers,
+                    resolved,
                     task.epochs_reducer,
                     task.metrics,
                 )
@@ -452,7 +455,7 @@ async def task_run(options: TaskRunOptions) -> EvalLog:
                         max_sandboxes=config.max_sandboxes,
                         sandbox_cleanup=sandbox_cleanup,
                         plan=plan,
-                        scorers=scorers,
+                        scorers=resolved,
                         cleanup=task.cleanup,
                         generate=generate,
                         progress=progress,
@@ -512,7 +515,7 @@ async def task_run(options: TaskRunOptions) -> EvalLog:
                     samples=profile.samples,
                     scores=completed_scores,
                     reducers=task.epochs_reducer,
-                    scorers=scorers,
+                    scorers=resolved,
                     metrics=task.metrics,
                     early_stopping=stopping_summary,
                 )
@@ -610,7 +613,7 @@ def update_metrics_display_fn(
     [
         int,
         list[dict[str, SampleScore]],
-        list[Scorer] | None,
+        list[ResolvedScorer] | None,
         ScoreReducer | list[ScoreReducer] | None,
         list[Metric | dict[str, list[Metric]]] | dict[str, list[Metric]] | None,
     ],
@@ -621,7 +624,7 @@ def update_metrics_display_fn(
     def compute(
         sample_count: int,
         sample_scores: list[dict[str, SampleScore]],
-        scorers: list[Scorer] | None,
+        scorers: list[ResolvedScorer] | None,
         reducers: ScoreReducer | list[ScoreReducer] | None,
         metrics: list[Metric | dict[str, list[Metric]]]
         | dict[str, list[Metric]]
@@ -677,7 +680,7 @@ async def task_run_sample(
     max_sandboxes: int | None,
     sandbox_cleanup: bool,
     plan: Plan,
-    scorers: list[Scorer] | None,
+    scorers: list[ResolvedScorer] | None,
     cleanup: Callable[[TaskState], Awaitable[None]] | None,
     generate: Generate,
     progress: Callable[[int], None],
@@ -743,7 +746,7 @@ async def task_run_sample(
         init_subtask_store(state.store)
         sample_transcript._subscribe(on_sample_event)
         if scorers:
-            init_scoring_context(scorers, Target(sample.target))
+            init_scoring_context([rs.scorer for rs in scorers], Target(sample.target))
         init_sample_assistant_internal()
 
         # use sandbox if provided
@@ -1064,11 +1067,9 @@ async def task_run_sample(
                             with create_time_limit(scoring_time_limit):
                                 if error is None:
                                     async with span(name="scorers"):
-                                        for scorer in scorers or []:
-                                            scorer_name = unique_scorer_name(
-                                                scorer,
-                                                list({*solver_score_names, *results}),
-                                            )
+                                        for resolved_scorer in scorers or []:
+                                            scorer_name = resolved_scorer.name
+                                            scorer = resolved_scorer.scorer
                                             async with span(
                                                 name=scorer_name, type="scorer"
                                             ):

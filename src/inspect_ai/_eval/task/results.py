@@ -36,6 +36,7 @@ from inspect_ai.scorer._metrics.std import stderr
 from inspect_ai.scorer._reducer import ScoreReducer, mean_score, reducer_log_name
 from inspect_ai.scorer._scorer import (
     SCORER_METRICS,
+    ResolvedScorer,
     ScorerSpec,
     scorer_metrics,
     unique_scorer_name,
@@ -85,7 +86,7 @@ def eval_results(
     samples: int,
     scores: list[dict[str, SampleScore]],
     reducers: ScoreReducer | list[ScoreReducer] | None,
-    scorers: list[Scorer] | None,
+    scorers: list[ResolvedScorer] | None,
     metrics: list[Metric | dict[str, list[Metric]]] | dict[str, list[Metric]] | None,
     scorer_names: list[str] | None = None,
     early_stopping: EarlyStoppingSummary | None = None,
@@ -100,14 +101,16 @@ def eval_results(
 
     # extract scorers info from scorers then create scorers info for any
     # scores not already accounted for by a scorer name
-    scorers_info = [ScorerInfo.from_scorer(scorer) for scorer in (scorers or [])]
+    scorers_info = [ScorerInfo.from_scorer(rs.scorer) for rs in (scorers or [])]
 
     # use resolved scorer names to detect scores that are present in task state
     # that don't have a corresponding scorer
     resolved_scorer_names = (
         set(scorer_names)
         if scorer_names is not None
-        else {info.name for info in scorers_info}
+        else {rs.name for rs in scorers}
+        if scorers
+        else set()
     )
 
     for sample_scores in scores:
@@ -129,13 +132,17 @@ def eval_results(
         result_scores: list[EvalScore] = []
         sample_reductions: list[EvalSampleReductions] = []
         for index, scorer_info in enumerate(scorers_info):
-            # this scorer (if an explicit list of scorer name is provided, use those
-            # otherwise, generate a unique name for the scorer)
+            # use the resolved scorer name if available, otherwise generate one
             scorer_name = (
                 scorer_names[index]
-                if scorer_names
-                else unique_scorer_name(
-                    scorer_info.name, [eval_score.name for eval_score in result_scores]
+                if scorer_names and index < len(scorer_names)
+                else (
+                    scorers[index].name
+                    if scorers and index < len(scorers)
+                    else unique_scorer_name(
+                        scorer_info.name,
+                        [eval_score.name for eval_score in result_scores],
+                    )
                 )
             )
 
@@ -145,8 +152,8 @@ def eval_results(
             ]
 
             # Group the scores by sample_id
-            reducers, use_reducer_name = resolve_reducer(reducers)
-            if len(reducers) == 0:
+            resolved_reducers, use_reducer_name = resolve_reducer(reducers)
+            if len(resolved_reducers) == 0:
                 # Compute metrics without reduction since no reducers were
                 # explicitly specified
                 eval_scores = compute_eval_scores(
@@ -159,7 +166,7 @@ def eval_results(
                 result_scores.extend(eval_scores)
 
             else:
-                for reducer in reducers:
+                for reducer in resolved_reducers:
                     reducer_display_nm = (
                         reducer_log_name(reducer) if use_reducer_name else None
                     )

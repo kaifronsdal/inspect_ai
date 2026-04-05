@@ -12,7 +12,6 @@ from typing import (
     Callable,
     Literal,
     Sequence,
-    Tuple,
 )
 
 if TYPE_CHECKING:
@@ -52,7 +51,13 @@ from inspect_ai.scorer._reducer import (
     create_reducers,
     reducer_log_names,
 )
-from inspect_ai.scorer._scorer import ScorerSpec, unique_scorer_name
+from inspect_ai.scorer._scorer import (
+    ResolvedScorer,
+    ScorerSpec,
+)
+from inspect_ai.scorer._scorer import (
+    resolve_scorers as resolve_scorer_names,
+)
 from inspect_ai.solver import TaskState
 from inspect_ai.util._display import (
     DisplayType,
@@ -219,7 +224,10 @@ async def score_async(
         raise ValueError("There are no samples to score in the log.")
 
     # resolve scorers
-    resolved_scorers = resolve_scorer(scorers)
+    plain_scorers = resolve_scorer(scorers)
+    resolved_scorers: list[ResolvedScorer] = (
+        resolve_scorer_names(plain_scorers) if plain_scorers else []
+    )
 
     if copy:
         # deepcopy so we don't mutate the passed log
@@ -248,11 +256,9 @@ async def score_async(
     action = action or "append"
 
     with display_manager().progress(total=total_samples) as p:
-        scorer_names: list[str] | None = None
         scores: list[dict[str, SampleScore] | None] = [None] * total_samples
 
         async def _score_sample(idx_sample: int) -> None:
-            nonlocal scorer_names
             sample_score: dict[str, SampleScore] = {}
 
             async with samples(idx_sample) as sample:
@@ -265,14 +271,12 @@ async def score_async(
                 # We need to capture the the full sample score here
                 # since the sample score carries the scorer name that generated
                 # it (so using sample.scores directly isn't enough)
-                sample_score, names = await _run_score_task(
+                sample_score = await _run_score_task(
                     log, sample, resolved_scorers, action
                 )
 
             assert sample.scores is not None
             scores[idx_sample] = sample_score
-            if scorer_names is None:
-                scorer_names = names
             p.update(1)
 
         await tg_collect(
@@ -291,7 +295,7 @@ async def score_async(
         )
 
         # resolve the scorer metrics onto the scorers
-        resolved_scorers = resolve_scorer_metrics(resolved_scorers, log_metrics) or []
+        resolve_scorer_metrics([rs.scorer for rs in resolved_scorers], log_metrics)
 
         # override epochs_reducer if specified
         epochs_reducer = create_reducers(epochs_reducer)
@@ -305,10 +309,9 @@ async def score_async(
             total_samples,
             list(filter(None, scores)),
             epochs_reducer,
-            resolved_scorers,
+            resolved_scorers or None,
             log_metrics,
-            scorer_names,
-            log.results.early_stopping if log.results else None,
+            early_stopping=log.results.early_stopping if log.results else None,
         )
 
         # Since the metrics calculation above is only be done using the scorers
@@ -329,9 +332,9 @@ async def score_async(
 async def _run_score_task(
     log_header: EvalLog,
     sample: EvalSample,
-    scorers: list[Scorer],
+    scorers: list[ResolvedScorer],
     action: ScoreAction,
-) -> Tuple[dict[str, SampleScore], list[str]]:
+) -> dict[str, SampleScore]:
     target = Target(sample.target)
     state = TaskState(
         model=ModelName(log_header.eval.model),
@@ -368,16 +371,12 @@ async def _run_score_task(
 
     if state.scores is None:
         state.scores = {}
-    existing_score_names = [*state.scores]
 
     results: dict[str, SampleScore] = {}
-    scorer_names: list[str] = []
     async with span(name="scorers"):
-        for scorer in scorers:
-            scorer_name = unique_scorer_name(
-                scorer, list({*existing_score_names, *results})
-            )
-            scorer_names.append(scorer_name)
+        for resolved_scorer in scorers:
+            scorer_name = resolved_scorer.name
+            scorer = resolved_scorer.scorer
             async with span(name=scorer_name, type="scorer"):
                 score_result = await scorer(state, target)
                 if scorer_name in state.scores:
@@ -409,9 +408,7 @@ async def _run_score_task(
     sample.scores = _get_updated_scores(sample, results, action=action)
     sample.events = _get_updated_events(sample, new_events, action=action)
 
-    # return the actual sample scorers and scorer names that
-    # were used to generate this set of scores
-    return results, scorer_names
+    return results
 
 
 def metrics_from_log_header(
