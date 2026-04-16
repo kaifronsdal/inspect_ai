@@ -1,0 +1,4 @@
+{
+  "_comment": "SHA-256 checksums for sandbox tools binaries. Update this file each time new binaries are built. The pypi-release.py script verifies downloaded binaries against these hashes before including them in the PyPI package.",
+  "_instructions": "After building new binaries, run: sha256sum src/inspect_ai/binaries/inspect-sandbox-tools-* and update the entries below."
+}

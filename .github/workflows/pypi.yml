@@ -10,8 +10,30 @@ on:
         default: false
 
 jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: python3 -m pip install --user .[dev]
+      - name: Lint with Ruff
+        run: python3 -m ruff check .
+      - name: Format check with Ruff
+        run: python3 -m ruff format --check .
+      - name: Run tests
+        run: python3 -m pytest -x --color=yes
+
   publish:
     name: Publish
+    needs: verify
     runs-on: ubuntu-latest
     environment: pypi
     strategy:
@@ -20,11 +42,11 @@ jobs:
       id-token: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.x"
       - name: Install pypa/build
@@ -36,10 +58,10 @@ jobs:
       - name: Build
         run: python -m build
       - name: Publish package to TestPyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
         if: ${{ ! inputs.publish-release }}
         with:
           repository-url: https://test.pypi.org/legacy/
       - name: Publish package to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
         if: ${{ inputs.publish-release }}

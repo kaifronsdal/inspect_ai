@@ -1,0 +1,20 @@
+# Require review from maintainers for security-sensitive files.
+# Update the team/usernames below to match your organization.
+
+# CI/CD workflows — changes here can compromise publishing pipelines
+.github/workflows/ @UKGovernmentBEIS/inspect-maintainers
+
+# Dependabot and GitHub config
+.github/dependabot.yml @UKGovernmentBEIS/inspect-maintainers
+
+# Release scripts
+scripts/pypi-release.py @UKGovernmentBEIS/inspect-maintainers
+
+# Package metadata and build configuration
+pyproject.toml @UKGovernmentBEIS/inspect-maintainers
+MANIFEST.in @UKGovernmentBEIS/inspect-maintainers
+
+# Sandbox tools binaries and checksums
+src/inspect_ai/binaries/ @UKGovernmentBEIS/inspect-maintainers
+src/inspect_ai/tool/_sandbox_tools_utils/sandbox_tools_checksums.json @UKGovernmentBEIS/inspect-maintainers
+src/inspect_ai/tool/_sandbox_tools_utils/sandbox_tools_version.txt @UKGovernmentBEIS/inspect-maintainers

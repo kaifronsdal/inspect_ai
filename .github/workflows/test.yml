@@ -29,14 +29,30 @@ jobs:
     if: ${{ inputs.mode == 'create' }}
 
     steps:
-      - name: Create file
+      - name: Validate file name
+        env:
+          FILE_NAME: ${{ inputs.file_name }}
         run: |
-          echo "hello there" > "${{ inputs.file_name }}"
-          echo "Created file: ${{ inputs.file_name }}"
-          cat "${{ inputs.file_name }}"
+          # Reject empty, path-traversal, or shell-special characters
+          if [[ -z "$FILE_NAME" ]]; then
+            echo "Error: file_name is required for create mode"
+            exit 1
+          fi
+          if [[ "$FILE_NAME" =~ [/\\$\`\"\'\;|&><!()\{\}\[\]] ]] || [[ "$FILE_NAME" == *..* ]]; then
+            echo "Error: file_name contains disallowed characters"
+            exit 1
+          fi
+
+      - name: Create file
+        env:
+          FILE_NAME: ${{ inputs.file_name }}
+        run: |
+          echo "hello there" > "$FILE_NAME"
+          echo "Created file: $FILE_NAME"
+          cat "$FILE_NAME"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: created-file
           path: ${{ inputs.file_name }}
@@ -47,24 +63,37 @@ jobs:
 
     steps:
       - name: Download artifact from run
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           name: created-file
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ inputs.action_run_id }}
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
 
-      - name: Upload to S3 with public read access
+      - name: Validate artifact contents
+        run: |
+          # Only allow known file patterns — reject unexpected files
+          ALLOWED_PATTERN="^inspect-sandbox-tools-(amd64|arm64)-v[0-9]+$"
+          for file in *; do
+            if [ -f "$file" ]; then
+              if ! [[ "$file" =~ $ALLOWED_PATTERN ]]; then
+                echo "Error: unexpected file '$file' — aborting upload"
+                exit 1
+              fi
+            fi
+          done
+
+      - name: Upload to S3
         run: |
           for file in *; do
             if [ -f "$file" ]; then
-              aws s3 cp "$file" s3://inspect-tool-support/"$file" --acl public-read
+              aws s3 cp "$file" s3://inspect-tool-support/"$file"
               echo "File uploaded to: s3://inspect-tool-support/$file"
             fi
           done
@@ -76,11 +105,11 @@ jobs:
               aws s3 cp s3://inspect-tool-support/"$file" "downloaded_$file"
               echo "Downloaded file contents for $file:"
               cat "downloaded_$file"
-              echo "Verifying file contents match expected..."
-              if [ "$(cat "downloaded_$file")" = "hello there" ]; then
+              echo "Verifying file matches original..."
+              if diff "$file" "downloaded_$file" > /dev/null 2>&1; then
                 echo "✓ File contents verified successfully for $file"
               else
-                echo "✗ File contents do not match expected for $file"
+                echo "✗ File contents do not match for $file"
                 exit 1
               fi
             fi

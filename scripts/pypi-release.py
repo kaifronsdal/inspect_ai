@@ -17,6 +17,8 @@ Usage:
 """
 
 import argparse
+import hashlib
+import json
 import logging
 import os
 import re
@@ -141,8 +143,78 @@ def check_sandbox_tools_exist(version: str) -> bool:
         return False
 
 
-def download_file(url: str, dest_path: Path, dry_run: bool = False) -> bool:
-    """Download a file from URL to destination path."""
+def compute_sha256(file_path: Path) -> str:
+    """Compute SHA-256 hash of a file."""
+    sha256 = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            sha256.update(chunk)
+    return sha256.hexdigest()
+
+
+def get_expected_hashes(version: str) -> dict:
+    """Load expected SHA-256 hashes from the checksums file.
+
+    The checksums file should be at:
+      src/inspect_ai/tool/_sandbox_tools_utils/sandbox_tools_checksums.json
+
+    Format: {"inspect-sandbox-tools-amd64-v<N>": "<sha256>", ...}
+    """
+    checksums_file = Path(
+        "src/inspect_ai/tool/_sandbox_tools_utils/sandbox_tools_checksums.json"
+    )
+
+    if not checksums_file.exists():
+        logging.warning(
+            f"Checksums file not found: {checksums_file} — "
+            "integrity verification will be skipped. "
+            "Create this file to enable verification."
+        )
+        return {}
+
+    try:
+        with open(checksums_file) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        logging.error(f"Error reading checksums file: {e}")
+        sys.exit(1)
+
+
+def verify_binary_integrity(dest_path: Path, expected_hashes: dict) -> bool:
+    """Verify a downloaded binary against its expected SHA-256 hash."""
+    filename = dest_path.name
+    if filename not in expected_hashes:
+        logging.warning(
+            f"  No expected hash for {filename} — skipping verification"
+        )
+        return True
+
+    actual_hash = compute_sha256(dest_path)
+    expected_hash = expected_hashes[filename]
+
+    if actual_hash != expected_hash:
+        logging.error(
+            f"  INTEGRITY CHECK FAILED for {filename}!\n"
+            f"    Expected: {expected_hash}\n"
+            f"    Actual:   {actual_hash}\n"
+            f"  The downloaded binary does not match the expected checksum.\n"
+            f"  This could indicate a compromised download source."
+        )
+        # Remove the suspect file
+        dest_path.unlink(missing_ok=True)
+        return False
+
+    logging.info(f"  ✓ SHA-256 verified: {actual_hash}")
+    return True
+
+
+def download_file(
+    url: str,
+    dest_path: Path,
+    dry_run: bool = False,
+    expected_hashes: Optional[dict] = None,
+) -> bool:
+    """Download a file from URL to destination path with integrity verification."""
     if dry_run:
         logging.info(f"[DRY RUN] Would download {url} to {dest_path}")
         return True
@@ -174,6 +246,11 @@ def download_file(url: str, dest_path: Path, dry_run: bool = False) -> bool:
             logging.error(f"Download failed or file is empty: {dest_path}")
             return False
 
+        # Verify integrity against expected hash
+        if expected_hashes:
+            if not verify_binary_integrity(dest_path, expected_hashes):
+                return False
+
         # Make binary executable
         dest_path.chmod(0o755)
 
@@ -187,12 +264,15 @@ def download_file(url: str, dest_path: Path, dry_run: bool = False) -> bool:
 
 
 def download_sandbox_tools(version: str, dry_run: bool = False) -> bool:
-    """Download sandbox tools for both platforms from S3."""
+    """Download sandbox tools for both platforms from S3 with integrity verification."""
     base_url = "https://inspect-sandbox-tools.s3.us-east-2.amazonaws.com"
     binaries_dir = Path("src/inspect_ai/binaries")
 
     platforms = ["amd64", "arm64"]
     success = True
+
+    # Load expected hashes for integrity verification
+    expected_hashes = get_expected_hashes(version)
 
     # Ensure binaries directory exists
     if not dry_run:
@@ -203,7 +283,7 @@ def download_sandbox_tools(version: str, dry_run: bool = False) -> bool:
         url = f"{base_url}/{filename}"
         dest_path = binaries_dir / filename
 
-        if not download_file(url, dest_path, dry_run):
+        if not download_file(url, dest_path, dry_run, expected_hashes):
             success = False
             break
 
