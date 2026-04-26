@@ -1,0 +1,50 @@
+{
+  "F90.1": {
+    "verdict": "CONFIRMED",
+    "evidence": "event-panel tooltip = '04/23/26, 4:57:46 AM'; EventTimingPanel Start = '04/23/26, 4:57:46 AM'; log-list Completed = '2026-04-23 04:57:46'",
+    "notes": "Two formats on adjacent surfaces: transcript event panel uses 12-hour MM/DD/YY locale; log-list Completed column uses sv-SE YYYY-MM-DD 24-hour. Same instant, different shapes.",
+    "artifacts": []
+  },
+  "F90.2": {
+    "verdict": "CONFIRMED",
+    "evidence": "Metadata Time card Working = '2.8 sec', Total = '2.9 sec'; EventTimingPanel WorkingTime Start = '3 sec'; log-list Duration = '3.0 sec'",
+    "notes": "App-side surfaces (Metadata Time card, log-list Duration) render `N.N sec` with 1 decimal; transcript EventTimingPanel renders the same elapsed time as bare-int `N sec`. Two duration formatters coexist on one sample.",
+    "artifacts": []
+  },
+  "F90.3": {
+    "verdict": "CONFIRMED",
+    "evidence": "header score cell: <div class=\"_value_1foh6_34 _wrap_1foh6_26 _centerValue_1foh6_21\" data-unsearchable=\"true\"><span class=\"_circle_qymy9_1 text-size-small _green_qymy9_12\">true</span></div> | ScoreEvent body has badge class: False (body excerpt: ...'Score</div><div class=\"\">true</div><div class=\"_separator_1k2k0_13\"></div></div></div>')",
+    "notes": "Header renders boolean score via BooleanScoreDescriptor (green-circle badge classes). Transcript ScoreEvent renders the same value as bare unstyled text \u2014 no `_circle_` class.",
+    "artifacts": []
+  },
+  "F90.4": {
+    "verdict": "CONFIRMED",
+    "evidence": "multi-log grid row sampleId='F90.4-errored': Status cell = 'success'; Error cell = \"RuntimeError('F90.4: deliberate per-sample error. The parent log still has status=success \"",
+    "notes": "Per-sample Error cell carries the RuntimeError, yet the Status cell says 'success' \u2014 it's the parent log's status, not the sample's.",
+    "artifacts": []
+  },
+  "F90.5": {
+    "verdict": "CONFIRMED",
+    "evidence": "card-body children classes = ['_ansiDisplayContainer_1749m_1 text-size-small _ansi_1si8b_29']; sentinel in tab text = True; sentinel outside ANSI block = False",
+    "notes": "Sample Error tab card-body contains ONLY the ANSIDisplay traceback \u2014 no dedicated `error.message` panel above it. The sentinel appears only as the traceback's final line (incidental), not as a separately rendered message. TaskErrorPanel would render message + traceback.",
+    "artifacts": []
+  },
+  "F90.7": {
+    "verdict": "CONFIRMED",
+    "evidence": "log-list Model cell = 'none/none'; Models-tab contains 'none/none' = True; title-bar region contains 'none/none' = False",
+    "notes": "PrimaryBar suppresses the kModelNone sentinel, but the log-list Model column and the Models-tab ModelCard render the literal string 'none/none'.",
+    "artifacts": []
+  },
+  "F90.14": {
+    "verdict": "CONFIRMED",
+    "evidence": "headline (formatPrettyDecimal) = '1.0' | log-list score (formatPrettyDecimal) = '1.0' | sample-header (formatDecimalNoTrailingZeroes) = '1' | multi-log grid (toFixed(3)) = '1.000'",
+    "notes": "3 distinct renderings of the same value 1.0 across 4 surfaces: ['1', '1.0', '1.000'].",
+    "artifacts": []
+  },
+  "F80.10": {
+    "verdict": "CONFIRMED",
+    "evidence": "headline (formatPrettyDecimal) = '0.000' | log-list score (formatPrettyDecimal) = '0.000' | sample-header (formatDecimalNoTrailingZeroes) = '0.000000'",
+    "notes": "Score 1.234e-7 (non-zero) renders as all-zeros on 3/3 surface(s): headline (formatPrettyDecimal)='0.000', log-list score (formatPrettyDecimal)='0.000', sample-header (formatDecimalNoTrailingZeroes)='0.000000' \u2014 indistinguishable from a true zero score.",
+    "artifacts": []
+  }
+}
