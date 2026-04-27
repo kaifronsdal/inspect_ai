@@ -1,8 +1,8 @@
 # Repro inventory
 
-Generated 2026-04-24. All paths relative to `findings/repros/`.
+Generated 2026-04-24, updated 2026-04-27. All paths relative to `findings/repros/`.
 
-**Summary: 53 task files, 57 .eval files generated, 5 not-reproducible, 6 removed (non-issues), 0 failed.**
+**Summary: 53 `.eval` task files (57 `.eval` logs), 15 non-`.eval` repros (1 false-positive), 9 documented-only, 6 removed (non-issues), 0 failed.**
 
 All `.eval` files >1KB (range 5.2K–23.5K). Multi-log repros (F21.10, F30.1, F90.4, F90.14) intentionally produce 2 files each. F30.2, F30.4, F90.5 intentionally produce `status=error` logs.
 
@@ -61,16 +61,38 @@ All `.eval` files >1KB (range 5.2K–23.5K). Multi-log repros (F21.10, F30.1, F9
 | F90.5 | `tasks/90-cross/F90.5_sample_error_tab_drops_message.py` | `logs/90-cross/2026-04-24T22-20-26-00-00_F90.5-sample-error-tab-drops-message_LsxmeecEs3dGTTRmKqhjTJ.eval` | 8.1K | generated |
 | F90.7 | `tasks/90-cross/F90.7_kmodelnone_leaks.py` | `logs/90-cross/2026-04-24T22-21-39-00-00_F90.7-kmodelnone-leaks_K9dX7vVvUscp9dfdpX26Pr.eval` | 5.9K | generated |
 | F90.14 | `tasks/90-cross/F90.14_numeric_score_precision.py` | `logs/90-cross/2026-04-24T22-23-06-00-00_F90.14-numeric-score-precision-A_gZNqdQccjR2zWKRCoCALxH.eval`<br>`logs/90-cross/2026-04-24T22-23-06-00-00_F90.14-numeric-score-precision-B_RyTiWhx4ScjqEXwPQuGkKG.eval` | 7.2K / 7.2K | generated |
-| F02.12 | — | — | — | not-reproducible |
-| F20.15 | — | — | — | not-reproducible |
-| F31.13 | — | — | — | not-reproducible |
-| F40.6 | — | — | — | not-reproducible |
-| F80.1 | — | — | — | not-reproducible |
+| F02.12 | see [Non-.eval repros](#non-eval-repros) | `logs/02-transform/F02.12-unknown-event-type.eval` | 6.6K | post-processed |
+| F20.15 | see [Non-.eval repros](#non-eval-repros) | — | — | tsx script |
+| F31.13 | see [Non-.eval repros](#non-eval-repros) | `logs/30-loglist/F31.13-missing-started-at.eval` | 6.2K | post-processed |
+| F40.6 | see [Non-.eval repros](#non-eval-repros) | — | — | node script |
+| F80.1 | see [Non-.eval repros](#non-eval-repros) | — | — | tsx script |
 | F03.2 | — | — | — | removed (FALSE_POSITIVE) |
 | F03.3 | — | — | — | removed (FALSE_POSITIVE) |
-| F10.2 | — | — | — | removed (scout-only) |
-| F11.8 | — | — | — | removed (scout-only) |
+| F10.2 | see [Non-.eval repros](#non-eval-repros) | — | — | scout-only — vitest unit repro |
+| F11.8 | see [Non-.eval repros](#non-eval-repros) | — | — | scout-only — vitest unit repro |
 | F20.6 | — | — | — | removed (FALSE_POSITIVE) |
 | F31.6 | — | — | — | removed (FALSE_POSITIVE) |
 
-See [`NOT_REPRODUCIBLE.md`](NOT_REPRODUCIBLE.md) for the 5 not-reproducible findings, and [`REMOVED.md`](REMOVED.md) for the 6 removed non-issues.
+## Non-.eval repros
+
+Findings reproduced via pytest, standalone Node/tsx scripts, post-processed `.eval` zips, or Playwright interaction scripts — i.e. anything that does **not** go through `run.sh`. See per-batch READMEs for full details.
+
+| Finding ID | Repro type | Path | Run command | Status |
+|---|---|---|---|---|
+| F70.1 | pytest | `tasks/70-backend/test_F70_repros.py` | `uv run python -m pytest findings/repros/tasks/70-backend/test_F70_repros.py -v` | **CONFIRMED** |
+| F70.2 | pytest | `tasks/70-backend/test_F70_repros.py` | ″ | **CONFIRMED** |
+| F70.3 | pytest | `tasks/70-backend/test_F70_repros.py` | ″ | **CONFIRMED** |
+| F70.4 | pytest | `tasks/70-backend/test_F70_repros.py` | ″ | **CONFIRMED** |
+| F50.1 | tsx script | `tasks/51-clients/F50.1_isLargeSample_always_true.ts` | `bash findings/repros/tasks/51-clients/run-all.sh` | **CONFIRMED** |
+| F51.1 | node script | `tasks/51-clients/F51.1_pending_log_promise_race.mjs` | ″ | **CONFIRMED** |
+| F20.15 | tsx script | `tasks/51-clients/F20.15_messagesFromEvents_empty_choices.ts` | ″ | **CONFIRMED** |
+| F40.6 | node script | `tasks/51-clients/F40.6_renderer_mutates_entry.mjs` | ″ | **CONFIRMED** |
+| F80.1 | tsx script | `tasks/51-clients/F80.1_parseLogFileName_invalid_date.ts` | ″ | **CONFIRMED** |
+| F02.12 | post-processed `.eval` | `tasks/02-transform/F02.12_unknown_event_type.py` | `uv run --frozen python findings/repros/tasks/02-transform/F02.12_unknown_event_type.py` | **CONFIRMED** |
+| F31.13 | post-processed `.eval` | `tasks/30-loglist/F31.13_missing_started_at.py` | `uv run --frozen python findings/repros/tasks/30-loglist/F31.13_missing_started_at.py` | **CONFIRMED** |
+| F50.3 | playwright + `.eval` | `tasks/50-state/F50.3_verify.py` | `uv run --with playwright python findings/repros/tasks/50-state/F50.3_verify.py` | **CONFIRMED (partial)** — unbounded growth real; positional-collision claim wrong |
+| F50.9 | playwright | `tasks/50-state/F50.9_indexeddb_cache_miss.py` | `uv run --with playwright python findings/repros/tasks/50-state/F50.9_indexeddb_cache_miss.py` | **FALSE_POSITIVE** — caller pre-resolves path |
+| F10.2 | vitest unit test (scout) | `tasks/10-chat/F10.2_F11.8_scout_only.md` | `pnpm --filter @tsmono/inspect-components test` (after dropping the test file in) | **CONFIRMED (scout-only)** |
+| F11.8 | vitest unit test (scout) | `tasks/10-chat/F10.2_F11.8_scout_only.md` | ″ | **CONFIRMED (scout-only)** |
+
+See [`DOCUMENTED_ONLY.md`](DOCUMENTED_ONLY.md) for 9 perf / race-condition findings (F21.5, F40.7, F02.13, F70.9, F50.7, F51.7, F60.28, F60.36, F60.37) that have a written repro recipe but no executable artifact, and [`REMOVED.md`](REMOVED.md) for the 6 removed non-issues.

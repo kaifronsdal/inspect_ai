@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "strict": false,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@tsmono/util": ["./_stubs/tsmono-util.ts"],
+      "@tsmono/inspect-common/types": ["./_stubs/tsmono-inspect-common-types.ts"],
+      "@tsmono/inspect-common/*": ["./_stubs/empty.ts"],
+      "@tsmono/react/*": ["./_stubs/empty.ts"],
+      "@tsmono/*": ["./_stubs/empty.ts"]
+    }
+  }
+}

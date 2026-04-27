@@ -13,9 +13,9 @@ Per-finding reports with full evidence + analysis: [`per-finding/`](per-finding/
 | **QUESTIONABLE_DESIGN** | **1** | F10.6 — documented intentional, but per user feedback the silent-stripping behaviour is still undesirable |
 | ~~FALSE_POSITIVE~~ | ~~4~~ → 0 | Repros deleted — see [Deleted](#deleted) |
 | ~~REPRO_BROKEN (scout-only)~~ | ~~2~~ → 0 | Repros deleted — see [Deleted](#deleted) |
-| NOT_REPRODUCIBLE_VIA_EVAL | 5 | (from [`NOT_REPRODUCIBLE.md`](../NOT_REPRODUCIBLE.md) — backend/state bugs) |
+| ~~NOT_REPRODUCIBLE_VIA_EVAL~~ | ~~5~~ → 0 | All now have non-`.eval` repros — see [Non-.eval repro verdicts](#non-eval-repro-verdicts) |
 
-**Total findings with .eval repros remaining:** **53** (39 + 13 + 1)
+**Total findings with .eval repros remaining:** **53** (39 + 13 + 1) · **Non-.eval repros:** 15 (incl. 1 FALSE_POSITIVE — F50.9)
 
 **History:** 59 originally verified → 6 deleted as non-issues. Net change vs previous batch pass (52/3/3/1): +1 FALSE_POSITIVE (F03.3 promoted from NOT_REPRODUCED), F10.6 reclassified CONFIRMED→BY_DESIGN→QUESTIONABLE_DESIGN, F40.5 resolved INCONCLUSIVE→CONFIRMED_MINOR, 13 CONFIRMED split out as CONFIRMED_MINOR with downgrade rationale.
 
@@ -152,6 +152,30 @@ The Playwright harness handles this automatically via `checks/_util.py::show_all
 | F90.5 | CONFIRMED | MEDIUM | Card body children: only `[ANSIDisplay]`; `error.message` only inside traceback | [F90.5](per-finding/F90.5.md) | [page](artifacts/per-finding/F90.5-page.png) |
 | F90.7 | CONFIRMED | LOW | Title bar: hidden; log-list/ModelCard: `none/none` leaks | [F90.7](per-finding/F90.7.md) | [page](artifacts/per-finding/F90.7-page.png) |
 | F90.14 | CONFIRMED | LOW | `1.0` / `1` / `1.000` for same value across three surfaces | [F90.14](per-finding/F90.14.md) | [page](artifacts/per-finding/F90.14-page.png) |
+
+## Non-.eval repro verdicts
+
+Verdicts for the 15 non-`.eval` repros under [`../tasks/{70-backend,51-clients,50-state,02-transform,30-loglist,10-chat}/`](../tasks/). These were run on 2026-04-27 against `main` @ `56516cce7`; see each batch's README for the full evidence trail.
+
+| ID | Vehicle | Verdict | Evidence |
+|---|---|---|---|
+| F70.1 | pytest | **CONFIRMED** | `GET /api/log-headers?file=<outside-log_dir>` → 200 + leaked header; expected 401 |
+| F70.2 | pytest | **CONFIRMED** | `stream_log_bytes()` on local file > threshold → `ValueError("Expected S3FileSystem")` |
+| F70.3 | pytest | **CONFIRMED** | `OnlyDirAccessPolicy("/tmp/logs")` accepts `/tmp/logs-private/x.eval` (both servers) |
+| F70.4 | pytest | **CONFIRMED** | `log-delete` route methods = `{'GET'}` (fastapi) / `{'GET','HEAD'}` (aiohttp) |
+| F50.1 | tsx | **CONFIRMED** | `isLargeSample({store:{}, messages:[tiny]})` → `true`; expected `false` |
+| F51.1 | node | **CONFIRMED** | concurrent `get_log("a")`/`get_log("b")` → both resolve to `a`'s contents |
+| F20.15 | tsx | **CONFIRMED** | `ModelEvent` with `output.choices=[]` → `TypeError: Cannot read properties of undefined (reading 'message')` |
+| F40.6 | node | **CONFIRMED** | after `Number.render(entry)`, `entry.value` mutated `1234.5678 → "1,234.5678"` |
+| F80.1 | tsx | **CONFIRMED** | `parseLogFileName(...)` → `.timestamp` is `Invalid Date` (`getTime()` is `NaN`) |
+| F02.12 | post-processed `.eval` | **CONFIRMED** | injected `{"event":"F02_12_unknown_type"}` → outline shows the node, transcript renders nothing between markers |
+| F31.13 | post-processed `.eval` | **CONFIRMED** | `stats.started_at = ""` → Task tab shows `START 1970-01-01 00:00:00`; navbar `DURATION = NaN days NaN hr …`. *(Previously listed as NOT_REPRODUCIBLE — header rewrite makes it reachable.)* |
+| F50.3 | playwright | **CONFIRMED (partial)** | `app.propertyBags[<event-uuid-A>]` survives A→B navigation (unbounded growth real). **Sub-claim refuted:** positional-key cross-sample collision does not occur (`eventNodeId` is `event.uuid`, not positional). Recommend rewording finding to lead with the persisted-forever growth claim. |
+| F50.9 | playwright | **FALSE_POSITIVE** | Source asymmetry in `logSlice.ts:195-247` (read via `logAbsPath`, write via `logFileName`) is real, but the **only** caller `App.tsx:105 loadLog(selectedLogFile)` receives a path already resolved by `setSelectedLogFile:382-385`, so `logAbsPath === logFileName` always. Read key == write key; cache hits; no duplicate IndexedDB rows after reload. Latent code-smell only → downgrade to INFO. |
+| F10.2 | vitest (scout) | **CONFIRMED (scout-only)** | `ChatView` with `collapseToolMessages: false` → `message.error` absent from rendered DOM; control with `collapseToolMessages: true` shows it |
+| F11.8 | vitest (scout) | **CONFIRMED (scout-only)** | same path → `ContentData` sentinel filtered out before `ToolOutput` |
+
+**Net change:** +1 FALSE_POSITIVE (F50.9). F31.13 moves from NOT_REPRODUCIBLE_VIA_EVAL → CONFIRMED. F50.3 stays CONFIRMED but its "positional collision" sub-claim is wrong and should be dropped from the finding text. The four remaining HIGH findings without `.eval` repros (F50.1, F51.1, F70.1, F70.2) are now all CONFIRMED via this batch.
 
 ## Repro fixes made during verification
 

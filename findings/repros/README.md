@@ -82,23 +82,30 @@ Batches: `01-events`, `02-transform`, `10-chat`, `11-tools`, `20-samples`, `30-l
 ² F10.6: stripping is documented + e2e-tested (PR #2324), but per user feedback the silent-data-loss behaviour is still undesirable — kept as a questionable-design repro rather than a confirmed bug.
 ↓ Per-finding verification recommends a severity downgrade — see [`verify/per-finding/`](verify/per-finding/) for rationale.
 
+## Non-.eval repros
+
+Findings whose bug lives outside the static-log render path (Python HTTP backend, pure TS utility functions, cross-navigation Zustand state, post-processed log headers) and so are reproduced via pytest / Node scripts / Playwright interaction instead of a plain `@task` file. Each batch has its own README with full background.
+
+| Batch | Findings | Run | README |
+|---|---|---|---|
+| **70-backend** (pytest) | F70.1, F70.2, F70.3, F70.4 | `uv run python -m pytest findings/repros/tasks/70-backend/test_F70_repros.py -v` | [tasks/70-backend/](tasks/70-backend/README.md) |
+| **51-clients** (tsx/node) | F50.1, F51.1, F20.15, F40.6, F80.1 | `bash findings/repros/tasks/51-clients/run-all.sh` | [tasks/51-clients/](tasks/51-clients/README.md) |
+| **02-transform** (post-processed `.eval`) | F02.12 | `uv run --frozen python findings/repros/tasks/02-transform/F02.12_unknown_event_type.py` | [tasks/02-transform/](tasks/02-transform/README.md) |
+| **30-loglist** (post-processed `.eval`) | F31.13 | `uv run --frozen python findings/repros/tasks/30-loglist/F31.13_missing_started_at.py` | [tasks/30-loglist/](tasks/30-loglist/README.md) |
+| **50-state** (playwright) | F50.3, F50.9 | `uv run --with playwright python findings/repros/tasks/50-state/F50.3_verify.py`<br>`uv run --with playwright python findings/repros/tasks/50-state/F50.9_indexeddb_cache_miss.py` | [tasks/50-state/](tasks/50-state/README.md) |
+| **10-chat** (vitest, scout-only) | F10.2, F11.8 | `pnpm --filter @tsmono/inspect-components test` (after dropping the embedded test file in) | [tasks/10-chat/F10.2_F11.8_scout_only.md](tasks/10-chat/F10.2_F11.8_scout_only.md) |
+
+For each script, **exit 1 / FAIL = bug confirmed**; **exit 0 / PASS = false positive or fixed**. Verdicts: 12 CONFIRMED, 1 CONFIRMED-partial (F50.3), 1 FALSE_POSITIVE (F50.9), 2 CONFIRMED-scout-only (F10.2, F11.8). See [`verify/VERIFICATION.md` § Non-.eval repro verdicts](verify/VERIFICATION.md#non-eval-repro-verdicts).
+
+Performance and race-condition findings that need a profiler or fake-timer harness (no executable artifact) are documented in [`DOCUMENTED_ONLY.md`](DOCUMENTED_ONLY.md): F21.5, F40.7, F02.13, F70.9, F50.7, F51.7, F60.28/F60.36/F60.37.
+
 ## Removed (non-issues)
 
 6 repros were deleted after rigorous browser verification found the claimed bug does not exist (FALSE_POSITIVE) or is unreachable in `apps/inspect` (scout-only): **F03.2, F03.3, F20.6, F31.6, F10.2, F11.8**. See [`REMOVED.md`](REMOVED.md) for evidence links.
 
 ## Not reproducible via .eval
 
-These findings cannot be exercised by a static `.eval` file (HTTP layer, browser storage, render-time side effects, or live-streaming-only paths). See [`NOT_REPRODUCIBLE.md`](NOT_REPRODUCIBLE.md) for full analysis.
-
-| Finding | Reason | Alternative verification |
-|---|---|---|
-| F02.12 | `Event` is a closed pydantic discriminated union — `inspect eval` cannot emit an unknown event type | `satisfies never` exhaustiveness check, or hex-edit a `.eval` |
-| F20.15 | `messagesFromEvents()` only runs on the live-streaming path (`runningSampleData`); completed logs always have `sample.messages` | Unit test feeding a `ModelEvent` with `output.choices: []` |
-| F31.13 | Requires `evalStats.started_at` empty → only `status="started"` logs; mockllm always populates it | Open a still-running `.eval` and check Task tab → Start row |
-| F40.6 | React render-time prop mutation; only observable via strict-mode double-render or shared object identity | Unit test: `render(<RenderedContent entry={e}/>); expect(e.value).toBe(42)` |
-| F80.1 | Latent — `parseLogFileName().timestamp` is computed but never read; "Created" column comes from log header | Node REPL: `Date.parse("2024-01-01T12-34-56+00-00")` → `NaN` |
-
-The four remaining HIGH findings without repros — **F50.1** (zustand store filter), **F51.1** (client-API promise race), **F70.1** / **F70.2** (Python HTTP backend) — are state-management / network-layer bugs that fall outside `.eval` rendering scope by definition; see [`HOWTO.md` §9](HOWTO.md#9-when-a-finding-is-not-reproducible-via-eval).
+All five findings previously listed here (F02.12, F20.15, F31.13, F40.6, F80.1) now have executable [non-`.eval` repros](#non-eval-repros). The four HIGH findings previously called out as "outside `.eval` scope" — **F50.1**, **F51.1**, **F70.1**, **F70.2** — likewise now have pytest / tsx repros above. [`NOT_REPRODUCIBLE.md`](NOT_REPRODUCIBLE.md) is currently empty; perf / race findings with no executable artifact live in [`DOCUMENTED_ONLY.md`](DOCUMENTED_ONLY.md).
 
 ## Regenerating
 
@@ -117,13 +124,16 @@ done
 
 | | |
 |---|---|
-| Task files | 53 |
-| `.eval` files | 57 (verified, 0 broken, 0 orphans) |
+| `.eval` task files | 53 |
+| `.eval` log files | 57 (verified, 0 broken, 0 orphans) + 3 post-processed/state (F02.12, F31.13, F50.3) |
 | Multi-log repros | 4 (F21.10, F30.1, F90.4, F90.14 → 2 logs each) |
 | Intentional `status=error` logs | 3 (F30.2, F30.4, F90.5) |
-| Not reproducible via `.eval` | 5 |
+| **Non-`.eval` repros** | **15** (4 pytest, 5 tsx/node, 2 post-processed, 2 playwright, 2 vitest-scout) — 1 FALSE_POSITIVE (F50.9) |
+| Documented-only (perf/race) | 9 — see [`DOCUMENTED_ONLY.md`](DOCUMENTED_ONLY.md) |
+| Not reproducible via `.eval` | 0 |
 | Removed (non-issues) | 6 — see [`REMOVED.md`](REMOVED.md) |
-| **HIGH coverage** | **9 of 14** standing HIGH findings have `.eval` repros |
+| **HIGH coverage** | **13 of 14** standing HIGH findings have a repro |
 
-HIGH findings with repros: F01.1, F01.2, F01.3, F03.1 (via F05.1), F10.1, F11.1, F11.3, F30.1, F40.1.
-HIGH findings without repros: F50.1, F51.1, F70.1, F70.2 (all outside `.eval` scope); F10.2 (scout-only, removed).
+HIGH findings with `.eval` repros: F01.1, F01.2, F01.3, F03.1 (via F05.1), F10.1, F11.1, F11.3, F30.1, F40.1.
+HIGH findings with non-`.eval` repros: F50.1, F51.1, F70.1, F70.2.
+HIGH findings without repros: F10.2 (scout-only — vitest unit test in [`tasks/10-chat/F10.2_F11.8_scout_only.md`](tasks/10-chat/F10.2_F11.8_scout_only.md)).

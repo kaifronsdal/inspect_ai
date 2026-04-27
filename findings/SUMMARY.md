@@ -27,20 +27,30 @@ All 19 HIGH findings reachable at verification time were independently re-read (
 
 **53** findings have minimal `.eval` repros under [`repros/`](repros/README.md). Each was opened in `inspect view` via Playwright, screenshotted, and independently re-verified by a dedicated agent against the cited source — see [`repros/verify/VERIFICATION.md`](repros/verify/VERIFICATION.md) and per-finding evidence at [`repros/verify/per-finding/`](repros/verify/per-finding/).
 
+A further **15** findings now have **non-`.eval` repros** (pytest / tsx / node / Playwright / post-processed `.eval`) covering the Python HTTP backend, pure-function TS bugs, and cross-navigation Zustand state — see [`repros/README.md` § Non-.eval repros](repros/README.md#non-eval-repros). Nine perf / race-condition findings with no executable artifact are documented in [`repros/DOCUMENTED_ONLY.md`](repros/DOCUMENTED_ONLY.md).
+
 | Verdict | Count |
 |---|---|
-| CONFIRMED | 39 |
-| CONFIRMED_MINOR (reproduces; recommend severity downgrade) | 13 |
+| CONFIRMED (`.eval`) | 39 |
+| CONFIRMED_MINOR (`.eval`; recommend severity downgrade) | 13 |
 | QUESTIONABLE_DESIGN (F10.6 — documented but undesirable) | 1 |
-| NOT_REPRODUCIBLE_VIA_EVAL | 5 |
-| **Removed (non-issues)** | **6** |
+| CONFIRMED (non-`.eval` — pytest/tsx/node/playwright) | 12 + 1 partial (F50.3) |
+| CONFIRMED scout-only (vitest) | 2 (F10.2, F11.8) |
+| Documented-only (perf/race) | 9 |
+| NOT_REPRODUCIBLE_VIA_EVAL | 0 |
+| **Removed / FALSE_POSITIVE** | **6 + 1** |
 
 **Removed** — repros deleted, findings should be dropped from this set (see [`repros/REMOVED.md`](repros/REMOVED.md)):
 - **F03.2** (timeline checkbox double-toggle) — FALSE_POSITIVE: both handlers fire, but `setStoredKinds` reads a stale render closure so two synchronous calls compute the *same* next state → single toggle, no flicker. Code smell only.
 - **F03.3** (swimlane `/`-in-span-name breadcrumb) — FALSE_POSITIVE: phantom prefixes are dropped by the `if (layout)` guard; real ancestors are always hit. The "breadcrumbs show gaps" impact cannot occur as described.
 - **F20.6** (limit value never displayed) — FALSE_POSITIVE: the transcript `SampleLimitEvent` panel renders `event.message` which includes `limit: 12,345`; the "nowhere outside JSON" claim is wrong.
 - **F31.6** (sample count → 0 when `epochs` unset) — FALSE_POSITIVE: `eval_config_defaults()` ensures `config.epochs` is never null in any real log, so `(epochs || 0)` always evaluates ≥1. Code smell only.
-- **F10.2** / **F11.8** — scout-only: both gated on `collapseToolMessages: false`, which only `apps/scout` sets. Inspect renders the data correctly. Source bugs at `ChatMessage.tsx:116-129` are real → re-scope to scout and downgrade (HIGH→MEDIUM, MEDIUM→LOW respectively).
+- **F50.9** (IndexedDB cache key mismatch) — FALSE_POSITIVE: source asymmetry (read via `logAbsPath`, write via `logFileName`) is real, but the only caller `App.tsx loadLog(selectedLogFile)` always receives a path already resolved to a `file://` URI by `setSelectedLogFile`, so read key == write key. Latent code-smell → downgrade to INFO.
+- **F10.2** / **F11.8** — scout-only: both gated on `collapseToolMessages: false`, which only `apps/scout` sets. Inspect renders the data correctly. Source bugs at `ChatMessage.tsx:116-129` are real → re-scope to scout and downgrade (HIGH→MEDIUM, MEDIUM→LOW respectively). A vitest unit-test repro is provided at [`repros/tasks/10-chat/F10.2_F11.8_scout_only.md`](repros/tasks/10-chat/F10.2_F11.8_scout_only.md).
+
+**Refinements from non-`.eval` verification:**
+- **F31.13** (Task tab `START 1970-01-01`) — moved from NOT_REPRODUCIBLE → **CONFIRMED**: a post-processed `.eval` with `stats.started_at = ""` reproduces it; navbar additionally shows `DURATION = NaN days NaN hr …`.
+- **F50.3** (collapse/property-bag state leaks across samples) — **CONFIRMED partial**: unbounded `app.propertyBags` growth across sample navigation is real and persisted; the "positional-key collision causes visible UI leak" sub-claim is **wrong** (transcript node ids are `event.uuid`, not positional). Reword finding accordingly.
 
 **F10.6** (`<think>`/`<internal>` stripped silently) — reclassified from BY_DESIGN to **QUESTIONABLE_DESIGN** per user feedback: the stripping is documented in `design/migration/chat-migration.md` and asserted by e2e test (PR #2324), but silently discarding text from the rendered view without any marker is still undesirable. Repro retained.
 
