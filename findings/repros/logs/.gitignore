@@ -1,0 +1,2 @@
+# Override repo-root .gitignore (which excludes logs/) so repro .eval files are tracked.
+!*
