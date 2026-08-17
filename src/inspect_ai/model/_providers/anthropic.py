@@ -206,6 +206,14 @@ INTERNAL_COMPUTER_TOOL_NAME = "computer"
 # https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-anthropic-claude-messages-request-response.html
 DEV_FULL_THINKING_BETA = "dev-full-thinking-2025-05-14"
 
+# ContentReasoning.internal marker identifying raw chain of thought produced by
+# this provider (see content_and_tool_calls_from_assistant_content_blocks)
+ANTHROPIC_THINKING_INTERNAL = "anthropic_thinking"
+
+
+def _is_anthropic_thinking(content: ContentReasoning) -> bool:
+    return content.internal == ANTHROPIC_THINKING_INTERNAL
+
 
 class AnthropicAPI(ModelAPI):
     def __init__(
@@ -2413,11 +2421,15 @@ def content_and_tool_calls_from_assistant_content_blocks(
         elif isinstance(content_block, ThinkingBlock):
             if full_thinking:
                 # the dev full-thinking beta returns the raw chain of thought,
-                # which belongs in `reasoning` rather than `summary`
+                # which belongs in `reasoning` rather than `summary`. this layout
+                # is structurally identical to reasoning from other providers
+                # (e.g. openai responses), so mark it so that replay can tell
+                # ours apart rather than guessing from field shape
                 content.append(
                     ContentReasoning(
                         reasoning=content_block.thinking,
                         signature=content_block.signature,
+                        internal=ANTHROPIC_THINKING_INTERNAL,
                     )
                 )
             else:
@@ -2735,15 +2747,12 @@ async def message_block_params(
                         signature=content.reasoning,
                     )
                 ]
-            elif (
-                not content.redacted
-                and content.signature is not None
-                and content.reasoning
-            ):
-                # full raw chain of thought (e.g. from the dev full-thinking beta).
-                # require non-empty reasoning so that reasoning from other providers
-                # (e.g. OpenAI responses w/ store=True, which has an empty reasoning
-                # field and an item id in signature) falls through to text as before
+            elif _is_anthropic_thinking(content) and content.signature is not None:
+                # full raw chain of thought (from the dev full-thinking beta).
+                # gated on the internal marker rather than field shape: this
+                # layout is identical to reasoning from other providers (e.g.
+                # openai responses, whose signature is an item id), which must
+                # keep falling through to text below
                 return [
                     ThinkingBlockParam(
                         type="thinking",

@@ -9,6 +9,7 @@ from anthropic.types import ThinkingBlock
 
 from inspect_ai._util.content import ContentReasoning
 from inspect_ai.model._providers.anthropic import (
+    ANTHROPIC_THINKING_INTERNAL,
     DEV_FULL_THINKING_BETA,
     AnthropicAPI,
     content_and_tool_calls_from_assistant_content_blocks,
@@ -49,6 +50,7 @@ def test_anthropic_full_thinking_routes_to_reasoning() -> None:
     assert reasoning.signature == SIGNATURE
     assert reasoning.summary is None
     assert not reasoning.redacted
+    assert reasoning.internal == ANTHROPIC_THINKING_INTERNAL
 
 
 async def test_anthropic_full_thinking_replays_from_internal() -> None:
@@ -65,9 +67,14 @@ async def test_anthropic_full_thinking_replays_from_internal() -> None:
 
 
 async def test_anthropic_full_thinking_replays_without_internal() -> None:
-    # simulate reasoning restored from a log (no cached thinking blocks)
+    # simulate reasoning restored from a log (no cached thinking blocks). the
+    # internal marker is serialized into the log, so it survives rehydration
     init_sample_anthropic_assistant_internal()
-    reasoning = ContentReasoning(reasoning=THINKING, signature=SIGNATURE)
+    reasoning = ContentReasoning(
+        reasoning=THINKING,
+        signature=SIGNATURE,
+        internal=ANTHROPIC_THINKING_INTERNAL,
+    )
     blocks = await message_block_params(reasoning)
     assert blocks == [
         {"type": "thinking", "thinking": THINKING, "signature": SIGNATURE}
@@ -84,14 +91,25 @@ async def test_anthropic_summary_thinking_replays_without_internal() -> None:
 
 
 async def test_anthropic_foreign_reasoning_falls_through_to_text() -> None:
-    # reasoning produced by other providers (e.g. OpenAI responses w/ store=True,
-    # which has empty reasoning and an item id in signature) must not be
-    # reconstructed as an anthropic thinking block
+    # reasoning produced by other providers must not be reconstructed as an
+    # anthropic thinking block -- its signature is not a valid anthropic
+    # signature, so replaying it would be rejected by the api. the readable
+    # shape below is structurally identical to full-thinking reasoning, which
+    # is why reconstruction is gated on provenance rather than field shape
     init_sample_anthropic_assistant_internal()
-    reasoning = ContentReasoning(reasoning="", signature="rs_abc123", redacted=False)
-    blocks = await message_block_params(reasoning)
-    assert len(blocks) == 1
-    assert blocks[0]["type"] == "text"
+    for foreign in (
+        # openai responses, store=True with no readable content
+        ContentReasoning(reasoning="", signature="rs_abc123", redacted=False),
+        # openai responses, store=True with readable content populated
+        ContentReasoning(
+            reasoning="Some readable reasoning text",
+            signature="rs_def456",
+            redacted=False,
+        ),
+    ):
+        blocks = await message_block_params(foreign)
+        assert len(blocks) == 1, foreign
+        assert blocks[0]["type"] == "text", foreign
 
 
 async def test_anthropic_full_thinking_replays_after_lossy_round_trip() -> None:
