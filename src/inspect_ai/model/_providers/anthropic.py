@@ -201,6 +201,11 @@ AZURE_ANTHROPIC_BASE_URL_VARS = [
 
 INTERNAL_COMPUTER_TOOL_NAME = "computer"
 
+# beta header that requests the full raw chain of thought rather than a summary
+# (documented for Bedrock but honored for claude models on any provider):
+# https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-anthropic-claude-messages-request-response.html
+DEV_FULL_THINKING_BETA = "dev-full-thinking-2025-05-14"
+
 
 class AnthropicAPI(ModelAPI):
     def __init__(
@@ -715,6 +720,7 @@ class AnthropicAPI(ModelAPI):
             tools,
             pending_tool_uses=pending_tool_uses,
             pending_mcp_tool_uses=pending_mcp_tool_uses,
+            full_thinking=self.is_full_thinking_request(request),
         )
 
         if continuation_required:
@@ -747,6 +753,16 @@ class AnthropicAPI(ModelAPI):
         # Pydantic UserWarning for. We can remove this when remote MCP is out of beta
         return head_message.model_dump(warnings="none"), head_model_output
 
+    def is_full_thinking_request(self, request: dict[str, Any]) -> bool:
+        """Does this request carry the beta header for full (non-summarized) thinking?"""
+        extra_headers = request.get("extra_headers", None) or {}
+        if DEV_FULL_THINKING_BETA in str(extra_headers.get("anthropic-beta", "")):
+            return True
+        client_beta = getattr(self.client, "_custom_headers", {}).get(
+            "anthropic-beta", ""
+        )
+        return DEV_FULL_THINKING_BETA in str(client_beta)
+
     def completion_config(
         self, config: GenerateConfig
     ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str], list[str]]:
@@ -756,10 +772,13 @@ class AnthropicAPI(ModelAPI):
         extra_body: dict[str, Any] = {}
         betas: list[str] = self.betas.copy()
 
-        # pull betas out of headers
-        anthropic_beta_header = headers.pop("anthropic_beta", None)
-        if anthropic_beta_header:
-            betas.extend([h.strip() for h in anthropic_beta_header.split(",")])
+        # pull betas out of headers (accept both underscore and hyphen keys --
+        # merging hyphen keys into betas prevents them from being overwritten
+        # when we later write the combined 'anthropic-beta' header)
+        for beta_header_key in ("anthropic_beta", "anthropic-beta"):
+            anthropic_beta_header = headers.pop(beta_header_key, None)
+            if anthropic_beta_header:
+                betas.extend([h.strip() for h in anthropic_beta_header.split(",")])
 
         # Claude 4.7+ is always in adaptive thinking and rejects these params
         # regardless of config; other models only reject them under thinking.
@@ -2059,6 +2078,7 @@ async def model_output_from_message(
     pending_tool_uses: dict[str, ServerToolUseBlock | BetaServerToolUseBlock]
     | None = None,
     pending_mcp_tool_uses: dict[str, BetaMCPToolUseBlock] | None = None,
+    full_thinking: bool = False,
 ) -> tuple[ModelOutput, bool]:
     # extract content and tool calls
     content, tool_calls = content_and_tool_calls_from_assistant_content_blocks(
@@ -2066,6 +2086,7 @@ async def model_output_from_message(
         tools,
         pending_tool_uses=pending_tool_uses,
         pending_mcp_tool_uses=pending_mcp_tool_uses,
+        full_thinking=full_thinking,
     )
 
     # count reasoning tokens
@@ -2159,6 +2180,7 @@ def content_and_tool_calls_from_assistant_content_blocks(
     pending_tool_uses: dict[str, ServerToolUseBlock | BetaServerToolUseBlock]
     | None = None,
     pending_mcp_tool_uses: dict[str, BetaMCPToolUseBlock] | None = None,
+    full_thinking: bool = False,
 ) -> tuple[list[Content], list[ToolCall] | None]:
     # resolve params to blocks
     content_blocks: list[
@@ -2387,20 +2409,35 @@ def content_and_tool_calls_from_assistant_content_blocks(
             )
 
         elif isinstance(content_block, ThinkingBlock):
-            # anthropic reasoning is now always a summary (save for Sonnet 3.7):
-            # https://platform.claude.com/docs/en/build-with-claude/extended-thinking#differences-in-thinking-across-model-versions
-            content.append(
-                ContentReasoning(
-                    summary=content_block.thinking,
-                    reasoning=content_block.signature,
-                    redacted=True,
+            if full_thinking:
+                # the dev full-thinking beta returns the raw chain of thought,
+                # which belongs in `reasoning` rather than `summary`
+                content.append(
+                    ContentReasoning(
+                        reasoning=content_block.thinking,
+                        signature=content_block.signature,
+                    )
                 )
-            )
+            else:
+                # anthropic reasoning is otherwise always a summary (save for Sonnet 3.7):
+                # https://platform.claude.com/docs/en/build-with-claude/extended-thinking#differences-in-thinking-across-model-versions
+                content.append(
+                    ContentReasoning(
+                        summary=content_block.thinking,
+                        reasoning=content_block.signature,
+                        redacted=True,
+                    )
+                )
 
             # reasoning won't round trip through bridges w/ simplistic handling
-            # (e.g. OpenAI completions) so we also save for replay)
-            assistant_internal().thinking_blocks[mm3_hash(content_block.signature)] = (
-                cast(ThinkingBlockParam, content_block.model_dump(exclude_none=True))
+            # (e.g. OpenAI completions) so we also save for replay. keyed by the
+            # value stored in ContentReasoning.reasoning (which message_block_params
+            # uses for lookup)
+            replay_key = (
+                content_block.thinking if full_thinking else content_block.signature
+            )
+            assistant_internal().thinking_blocks[mm3_hash(replay_key)] = cast(
+                ThinkingBlockParam, content_block.model_dump(exclude_none=True)
             )
 
         elif isinstance(content_block, RedactedThinkingBlock):
@@ -2691,6 +2728,15 @@ async def message_block_params(
                         type="thinking",
                         thinking=content.summary,
                         signature=content.reasoning,
+                    )
+                ]
+            elif not content.redacted and content.signature is not None:
+                # full raw chain of thought (e.g. from the dev full-thinking beta)
+                return [
+                    ThinkingBlockParam(
+                        type="thinking",
+                        thinking=content.reasoning,
+                        signature=content.signature,
                     )
                 ]
             elif content.redacted and content.signature is not None:

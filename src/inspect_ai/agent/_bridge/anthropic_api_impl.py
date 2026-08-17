@@ -43,6 +43,7 @@ from inspect_ai.model._model import ModelName
 from inspect_ai.model._model_output import ModelUsage, StopReason
 from inspect_ai.model._providers._anthropic_citations import to_inspect_citation
 from inspect_ai.model._providers.anthropic import (
+    DEV_FULL_THINKING_BETA,
     ToolParamDef,
     anthropic_extra_body_fields,
     assistant_message_blocks,
@@ -123,7 +124,15 @@ async def inspect_anthropic_api_request_impl(
     input: list[MessageParam] = json_data["messages"]
     debug_log("SCAFFOLD INPUT", input)
 
-    messages = await messages_from_anthropic_input(input, tools)
+    # does the scaffold request full (non-summarized) thinking?
+    full_thinking = any(
+        k.lower() == "anthropic-beta" and DEV_FULL_THINKING_BETA in str(v)
+        for k, v in (headers or {}).items()
+    )
+
+    messages = await messages_from_anthropic_input(
+        input, tools, full_thinking=full_thinking
+    )
     debug_log("INSPECT MESSAGES", messages)
 
     # extract generate config (hoist instructions into system_message)
@@ -328,7 +337,9 @@ def tool_choice_from_anthropic_tool_choice(
 
 
 async def messages_from_anthropic_input(
-    input: list[MessageParam], tools: list[ToolInfo | Tool]
+    input: list[MessageParam],
+    tools: list[ToolInfo | Tool],
+    full_thinking: bool = False,
 ) -> list[ChatMessage]:
     messages: list[ChatMessage] = []
 
@@ -353,7 +364,7 @@ async def messages_from_anthropic_input(
             # create assistant message
             assistant_content, tool_calls = (
                 content_and_tool_calls_from_assistant_content_blocks(
-                    param_content, tools_info
+                    param_content, tools_info, full_thinking=full_thinking
                 )
             )
             messages.append(
