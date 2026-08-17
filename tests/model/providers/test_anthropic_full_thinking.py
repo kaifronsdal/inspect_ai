@@ -83,6 +83,32 @@ async def test_anthropic_summary_thinking_replays_without_internal() -> None:
     ]
 
 
+async def test_anthropic_foreign_reasoning_falls_through_to_text() -> None:
+    # reasoning produced by other providers (e.g. OpenAI responses w/ store=True,
+    # which has empty reasoning and an item id in signature) must not be
+    # reconstructed as an anthropic thinking block
+    init_sample_anthropic_assistant_internal()
+    reasoning = ContentReasoning(reasoning="", signature="rs_abc123", redacted=False)
+    blocks = await message_block_params(reasoning)
+    assert len(blocks) == 1
+    assert blocks[0]["type"] == "text"
+
+
+async def test_anthropic_full_thinking_replays_after_lossy_round_trip() -> None:
+    # bridges w/ simplistic handling can drop signature/summary and keep only
+    # `reasoning` -- the replay cache (keyed by both thinking and signature
+    # hashes) must still recover the original block
+    init_sample_anthropic_assistant_internal()
+    content_and_tool_calls_from_assistant_content_blocks(
+        [thinking_block()], [], full_thinking=True
+    )
+    degraded = ContentReasoning(reasoning=THINKING)
+    blocks = await message_block_params(degraded)
+    assert blocks == [
+        {"type": "thinking", "thinking": THINKING, "signature": SIGNATURE}
+    ]
+
+
 def test_anthropic_full_thinking_request_detection() -> None:
     api = AnthropicAPI(model_name="claude-sonnet-4-6", api_key="fake-api-key")
     assert not api.is_full_thinking_request({})

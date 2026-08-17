@@ -772,13 +772,15 @@ class AnthropicAPI(ModelAPI):
         extra_body: dict[str, Any] = {}
         betas: list[str] = self.betas.copy()
 
-        # pull betas out of headers (accept both underscore and hyphen keys --
-        # merging hyphen keys into betas prevents them from being overwritten
-        # when we later write the combined 'anthropic-beta' header)
-        for beta_header_key in ("anthropic_beta", "anthropic-beta"):
-            anthropic_beta_header = headers.pop(beta_header_key, None)
-            if anthropic_beta_header:
-                betas.extend([h.strip() for h in anthropic_beta_header.split(",")])
+        # pull betas out of headers (accept underscore and hyphen keys in any
+        # case -- e.g. the bridge forwards raw http headers -- and merge them
+        # into betas so they aren't overwritten when we later write the
+        # combined 'anthropic-beta' header)
+        for key in list(headers.keys()):
+            if key.lower() in ("anthropic_beta", "anthropic-beta"):
+                anthropic_beta_header = headers.pop(key)
+                if anthropic_beta_header:
+                    betas.extend([h.strip() for h in anthropic_beta_header.split(",")])
 
         # Claude 4.7+ is always in adaptive thinking and rejects these params
         # regardless of config; other models only reject them under thinking.
@@ -2430,14 +2432,17 @@ def content_and_tool_calls_from_assistant_content_blocks(
                 )
 
             # reasoning won't round trip through bridges w/ simplistic handling
-            # (e.g. OpenAI completions) so we also save for replay. keyed by the
-            # value stored in ContentReasoning.reasoning (which message_block_params
-            # uses for lookup)
-            replay_key = (
-                content_block.thinking if full_thinking else content_block.signature
-            )
-            assistant_internal().thinking_blocks[mm3_hash(replay_key)] = cast(
+            # (e.g. OpenAI completions) so we also save for replay. store under
+            # both hashes so that lookup by ContentReasoning.reasoning (which
+            # message_block_params uses) succeeds in either layout
+            thinking_block_param = cast(
                 ThinkingBlockParam, content_block.model_dump(exclude_none=True)
+            )
+            assistant_internal().thinking_blocks[mm3_hash(content_block.thinking)] = (
+                thinking_block_param
+            )
+            assistant_internal().thinking_blocks[mm3_hash(content_block.signature)] = (
+                thinking_block_param
             )
 
         elif isinstance(content_block, RedactedThinkingBlock):
@@ -2730,8 +2735,15 @@ async def message_block_params(
                         signature=content.reasoning,
                     )
                 ]
-            elif not content.redacted and content.signature is not None:
-                # full raw chain of thought (e.g. from the dev full-thinking beta)
+            elif (
+                not content.redacted
+                and content.signature is not None
+                and content.reasoning
+            ):
+                # full raw chain of thought (e.g. from the dev full-thinking beta).
+                # require non-empty reasoning so that reasoning from other providers
+                # (e.g. OpenAI responses w/ store=True, which has an empty reasoning
+                # field and an item id in signature) falls through to text as before
                 return [
                     ThinkingBlockParam(
                         type="thinking",
